@@ -1,0 +1,38 @@
+# Select base image (can be ubuntu, python, shiny etc)
+FROM python:3.11-slim
+
+# Create user name and home directory variables. 
+# The variables are later used as $USER and $HOME. 
+ENV USER=username
+ENV HOME=/home/$USER
+
+# Add user to system
+RUN useradd -m -u 1000 $USER
+
+# Set working directory (this is where the code should go)
+WORKDIR $HOME/app
+
+# Update system and install dependencies.
+RUN apt-get update && apt-get install --no-install-recommends -y \
+    build-essential \
+    python3-dev && \
+    rm -rf /var/lib/apt/lists/*
+
+# Copy code and start script (this will place the files in home/username/)
+COPY requirements.txt $HOME/app/requirements.txt
+COPY main.py $HOME/app/main.py
+COPY utils/ $HOME/app/utils
+COPY data/ $HOME/app/data
+
+RUN pip install --no-cache-dir -r requirements.txt \
+    && chown -R $USER:$USER $HOME \
+    && rm -rf /var/lib/apt/lists/*
+
+USER $USER
+
+EXPOSE 7860
+ENV GRADIO_SERVER_NAME="0.0.0.0"
+ENV GRADIO_ANALYTICS_ENABLED=false
+ENV OMP_NUM_THREADS=4
+
+CMD ["python", "main.py"]

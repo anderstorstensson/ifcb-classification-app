@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Gradio cache
+.gradio/
+
+# Claude Code
+.claude/
+
+# Git
+.git/
+.gitignore
+
+# Unused models and examples
+data/models/flower-vgg19/
+data/examples/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
