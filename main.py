@@ -1,248 +1,22 @@
-import atexit
 import io
-import json
-import logging
 import os
 import shutil
-import tempfile
-import threading
 import zipfile
 
 import gradio as gr
-import torch
 from PIL import Image
-from torchvision.transforms import v2 as transforms
-import torchvision.models as models
 
-from utils.CustomTransforms import SquarePad
-
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-MODEL_DIR = os.path.join(BASE_DIR, 'data', 'models', 'ifcb-plankton-resnet50')
-
-IMAGE_EXTENSIONS = {
-    '.png', '.jpg', '.jpeg', '.bmp', '.tiff', '.tif', '.gif', '.webp',
-}
-
-IMAGES_PER_PAGE = 500
-MAX_ZIP_BYTES = 200 * 1024 * 1024  # 200 MB
-MAX_ZIP_FILES = 10_000
-MAX_SINGLE_FILE_BYTES = 50 * 1024 * 1024  # 50 MB
-
-
-# --- Model loading ---
-
-
-def load_labels(path):
-    with open(path, 'r') as f:
-        return [line.strip().strip("'").strip() for line in f if line.strip()]
-
-
-def build_resnet50(num_classes, weights_path):
-    net = models.resnet50()
-    net.fc = torch.nn.Linear(net.fc.in_features, num_classes)
-    state_dict = torch.load(weights_path, map_location='cpu', weights_only=True)
-    net.load_state_dict(state_dict)
-    net.eval()
-    return net
-
-
-labels = load_labels(os.path.join(MODEL_DIR, 'classes.txt'))
-model = build_resnet50(len(labels), os.path.join(MODEL_DIR, 'weights.pth'))
-
-num_params = sum(p.numel() for p in model.parameters())
-
-image_transform = transforms.Compose([
-    transforms.ToImage(),
-    transforms.ToDtype(torch.float32, scale=True),
-    SquarePad(),
-    transforms.Resize((224, 224), antialias=True),
-])
-
-
-def format_label(name):
-    return name.replace('_', ' ')
-
-
-def load_thresholds(path):
-    if not os.path.exists(path):
-        return {}, {}
-    with open(path, 'r') as f:
-        data = json.load(f)
-    thresholds = {}
-    for idx_str, metrics in data.get("class_metrics", {}).items():
-        idx = int(idx_str)
-        if idx < len(labels):
-            thresholds[format_label(labels[idx])] = metrics["threshold"]
-    meta = {
-        k: v for k, v in data.items()
-        if k != "class_metrics"
-    }
-    return thresholds, meta
-
-
-class_thresholds, threshold_meta = load_thresholds(
-    os.path.join(MODEL_DIR, 'thresholds.json')
+from model import (
+    predict, predict_html, render_predictions,
+    build_about_markdown,
 )
-
-NUM_TOP_CLASSES = 5
-
-
-def render_predictions(predictions):
-    if not predictions:
-        return '<div class="pred-panel"><p class="pred-empty">No predictions</p></div>'
-
-    sorted_preds = sorted(
-        predictions.items(), key=lambda x: x[1], reverse=True
-    )[:NUM_TOP_CLASSES]
-
-    rows = []
-    for name, prob in sorted_preds:
-        threshold = class_thresholds.get(name)
-        pct = prob * 100
-
-        threshold_html = ""
-        if threshold is not None:
-            t_pct = threshold * 100
-            threshold_html = (
-                f'<div class="pred-threshold" '
-                f'style="left:{t_pct:.1f}%" '
-                f'title="Threshold: {threshold:.2f}"></div>'
-            )
-
-        rows.append(
-            f'<div class="pred-row">'
-            f'<div class="pred-header">'
-            f'<span class="pred-name">{name}</span>'
-            f'<span class="pred-pct">{pct:.1f}%</span>'
-            f'</div>'
-            f'<div class="pred-track">'
-            f'<div class="pred-fill" style="width:{pct:.1f}%"></div>'
-            f'{threshold_html}'
-            f'</div>'
-            f'</div>'
-        )
-
-    legend = (
-        '<div class="pred-legend">'
-        '<span class="pred-legend-marker"></span>'
-        '<span>F2 threshold</span>'
-        '</div>'
-    )
-
-    return '<div class="pred-panel">' + ''.join(rows) + legend + '</div>'
-
-
-# --- Predict ---
-
-
-async def predict(image):
-    if image is None:
-        return {}
-
-    image_rgb = image.convert('RGB')
-    tensor = image_transform(image_rgb).unsqueeze(0)
-
-    with torch.no_grad():
-        logits = model(tensor)[0]
-        probs = torch.nn.functional.softmax(logits, dim=0)
-
-    return {
-        format_label(labels[i]): float(probs[i])
-        for i in range(len(labels))
-    }
-
-
-async def predict_html(image):
-    preds = await predict(image)
-    return render_predictions(preds)
-
-
-# --- Session helpers (disk-backed, not in-memory) ---
-
-log = logging.getLogger(__name__)
-
-_active_session_dirs = set()
-_session_lock = threading.Lock()
-
-
-@atexit.register
-def _cleanup_all_sessions():
-    with _session_lock:
-        for d in _active_session_dirs:
-            shutil.rmtree(d, ignore_errors=True)
-        _active_session_dirs.clear()
-
-
-def init_session(session):
-    if session is None:
-        session_dir = tempfile.mkdtemp(prefix="ifcb-session-")
-        with _session_lock:
-            _active_session_dirs.add(session_dir)
-        return {"dir": session_dir, "paths": []}
-    return session
-
-
-def save_image(pil_image, session, original_name=""):
-    session = init_session(session)
-    idx = len(session["paths"])
-    path = os.path.join(session["dir"], f"{idx:06d}.png")
-    pil_image.save(path)
-    w, h = pil_image.size
-    return {
-        **session,
-        "paths": [*session["paths"], path],
-        "sizes": [*session.get("sizes", []), w * h],
-        "names": [*session.get("names", []), original_name],
-    }
-
-
-def extract_roi(name):
-    stem = os.path.splitext(name)[0]
-    parts = stem.rsplit("_", 1)
-    if len(parts) == 2 and parts[1].isdigit():
-        return str(int(parts[1]))
-    return ""
-
-
-def sorted_indices(session, sort_by_dim):
-    if not session:
-        return []
-    n = len(session["paths"])
-    if sort_by_dim:
-        sizes = session.get("sizes", [])
-        return sorted(range(n), key=lambda i: sizes[i] if i < len(sizes) else 0, reverse=True)
-    names = session.get("names", [])
-    return sorted(range(n), key=lambda i: names[i] if i < len(names) else "")
-
-
-def gallery_page(session, page, sort_by_dim=True):
-    if not session:
-        return []
-    indices = sorted_indices(session, sort_by_dim)
-    names = session.get("names", [])
-    paths = session["paths"]
-    start = page * IMAGES_PER_PAGE
-    page_indices = indices[start:start + IMAGES_PER_PAGE]
-    result = []
-    for i in page_indices:
-        name = names[i] if i < len(names) else ""
-        roi = extract_roi(name)
-        caption = f"ROI {roi}" if roi else None
-        result.append((paths[i], caption))
-    return result
-
-
-def page_count(session):
-    n = len(session["paths"]) if session else 0
-    return max(1, -(-n // IMAGES_PER_PAGE))
-
-
-def page_info_text(session, page):
-    n = len(session["paths"]) if session else 0
-    if n == 0:
-        return "No images uploaded"
-    pages = page_count(session)
-    return f"Page {page + 1} of {pages} ({n} images)"
+from session import (
+    init_session, save_image, sorted_indices,
+    gallery_page, page_count, page_info_text,
+    _active_session_dirs, _session_lock, log,
+    IMAGE_EXTENSIONS, IMAGES_PER_PAGE,
+    MAX_ZIP_BYTES, MAX_ZIP_FILES, MAX_SINGLE_FILE_BYTES,
+)
 
 
 # --- Event handlers ---
@@ -370,33 +144,6 @@ def on_sort_change(session, sort_by_dim):
     page = 0
     prev, nxt = nav_buttons(session, page)
     return gallery_page(session, page, sort_by_dim), page, page_info_text(session, page), prev, nxt
-
-
-# --- About section content ---
-
-
-def build_about_markdown():
-    class_list = "\n".join(
-        f"1. {format_label(name)}" for name in labels
-    )
-    model_name = threshold_meta.get("model_name", "")
-    model_name_line = f"- **Model name:** {model_name}\n" if model_name else ""
-    return (
-        "## Model\n\n"
-        f"{model_name_line}"
-        f"- **Architecture:** ResNet-50\n"
-        f"- **Parameters:** {num_params:,}\n"
-        f"- **Input size:** 224 x 224 (square-padded)\n"
-        f"- **Classes:** {len(labels)}\n\n"
-        "## Training data\n\n"
-        "Fine-tuned using image data from the "
-        "[SMHI IFCB Plankton Image Reference Library]"
-        "(https://doi.org/10.17044/scilifelab.25883455) "
-        "and images provided by "
-        "The Norwegian Institute for Water Research (NIVA).\n\n"
-        "## Class list\n\n"
-        f"{class_list}\n"
-    )
 
 
 # --- UI ---
@@ -586,7 +333,7 @@ with gr.Blocks(title="IFCB Plankton Classifier") as demo:
     gr.HTML(
         "<h1 class='main-title'>IFCB Plankton Classifier</h1>"
         "<p class='subtitle'>"
-        "Classify phytoplankton images using a fine-tuned ResNet-50"
+        "Classify phytoplankton images using a fine-tuned ResNet-50 for the Skagerrak, Kattegat, and Baltic sea"
         "</p>"
     )
 

@@ -52,7 +52,9 @@ docker run -p 7860:7860 ifcb-classification-app
 ## Project Structure
 
 ```
-├── main.py                 # Application entry point and UI
+├── main.py                 # Event handlers, UI layout, app entry point
+├── model.py                # Model loading, inference, prediction rendering
+├── session.py              # Session state, ZIP handling, gallery helpers
 ├── utils/
 │   └── CustomTransforms.py # Square-pad transform
 ├── data/
