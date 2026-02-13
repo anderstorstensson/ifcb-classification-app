@@ -340,19 +340,18 @@ async def handle_zip_upload(zip_path, session, page, sort_by_dim):
     return session, gallery_page(session, page, sort_by_dim), page, page_info_text(session, page), prev, nxt
 
 
-async def on_gallery_select(session, page, sort_by_dim, evt: gr.SelectData):
+def on_gallery_select(session, page, sort_by_dim, evt: gr.SelectData):
     indices = sorted_indices(session, sort_by_dim)
     pos = page * IMAGES_PER_PAGE + evt.index
     if pos < 0 or pos >= len(indices):
-        return gr.Image(value=None, label="Upload image"), render_predictions({}), gr.Textbox(value="", visible=False)
+        return gr.Image(value=None, label="Upload image"), gr.Textbox(value="", visible=False)
     idx = indices[pos]
     paths = session["paths"]
     names = session.get("names", [])
     img = Image.open(paths[idx])
-    preds = await predict(img)
     name = names[idx] if idx < len(names) else ""
     label = os.path.splitext(name)[0] if name else "Upload image"
-    return gr.Image(value=img, label=label), render_predictions(preds), gr.Textbox(value=label if label != "Upload image" else "", visible=label != "Upload image")
+    return gr.Image(value=img, label=label), gr.Textbox(value=label if label != "Upload image" else "", visible=label != "Upload image")
 
 
 def go_prev(session, page, sort_by_dim):
@@ -698,7 +697,11 @@ with gr.Blocks(title="IFCB Plankton Classifier") as demo:
     gallery.select(
         fn=on_gallery_select,
         inputs=[session, page, sort_by_dim],
-        outputs=[image_input, label_output, filename_box],
+        outputs=[image_input, filename_box],
+    ).then(
+        fn=predict_html,
+        inputs=[image_input],
+        outputs=[label_output],
     )
     prev_btn.click(
         fn=go_prev,
