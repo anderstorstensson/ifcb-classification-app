@@ -248,6 +248,32 @@ def page_info_text(session, page):
 # --- Event handlers ---
 
 
+def disable_actions():
+    return gr.Button(interactive=False), gr.UploadButton(interactive=False)
+
+
+def enable_actions():
+    return gr.Button(interactive=True), gr.UploadButton(interactive=True)
+
+
+def capture_zip_and_disable(file):
+    return file, gr.Button(interactive=False), gr.UploadButton(interactive=False)
+
+
+def clear_session(session):
+    if session and "dir" in session:
+        shutil.rmtree(session["dir"], ignore_errors=True)
+        with _session_lock:
+            _active_session_dirs.discard(session["dir"])
+    page = 0
+    return (
+        None, gr.Gallery(value=[], selected_index=None), page, "No images uploaded",
+        gr.Image(value=None, label="Upload image"),
+        render_predictions({}), gr.Textbox(value="", visible=False),
+        gr.Button(interactive=False), gr.Button(interactive=False),
+    )
+
+
 def nav_buttons(session, page):
     pages = page_count(session)
     return (
@@ -259,7 +285,7 @@ def nav_buttons(session, page):
 async def handle_image_upload(image, session, page, sort_by_dim):
     if image is None:
         prev, nxt = nav_buttons(session, page)
-        return session, gr.Image(label="Upload image"), gallery_page(session, page, sort_by_dim), page, page_info_text(session, page), prev, nxt, render_predictions({})
+        return session, gr.Image(label="Upload image"), gallery_page(session, page, sort_by_dim), page, page_info_text(session, page), prev, nxt, render_predictions({}), gr.Textbox(value="", visible=False)
     original_name = ""
     if hasattr(image, "filename") and image.filename:
         original_name = os.path.basename(image.filename)
@@ -268,7 +294,7 @@ async def handle_image_upload(image, session, page, sort_by_dim):
     preds = await predict(image)
     prev, nxt = nav_buttons(session, page)
     label = os.path.splitext(original_name)[0] if original_name else "Upload image"
-    return session, gr.Image(value=image, label=label), gallery_page(session, page, sort_by_dim), page, page_info_text(session, page), prev, nxt, render_predictions(preds)
+    return session, gr.Image(value=image, label=label), gallery_page(session, page, sort_by_dim), page, page_info_text(session, page), prev, nxt, render_predictions(preds), gr.Textbox(value=label if label != "Upload image" else "", visible=label != "Upload image")
 
 
 async def handle_zip_upload(zip_path, session, page, sort_by_dim):
@@ -318,7 +344,7 @@ async def on_gallery_select(session, page, sort_by_dim, evt: gr.SelectData):
     indices = sorted_indices(session, sort_by_dim)
     pos = page * IMAGES_PER_PAGE + evt.index
     if pos < 0 or pos >= len(indices):
-        return gr.Image(value=None, label="Upload image"), render_predictions({})
+        return gr.Image(value=None, label="Upload image"), render_predictions({}), gr.Textbox(value="", visible=False)
     idx = indices[pos]
     paths = session["paths"]
     names = session.get("names", [])
@@ -326,7 +352,7 @@ async def on_gallery_select(session, page, sort_by_dim, evt: gr.SelectData):
     preds = await predict(img)
     name = names[idx] if idx < len(names) else ""
     label = os.path.splitext(name)[0] if name else "Upload image"
-    return gr.Image(value=img, label=label), render_predictions(preds)
+    return gr.Image(value=img, label=label), render_predictions(preds), gr.Textbox(value=label if label != "Upload image" else "", visible=label != "Upload image")
 
 
 def go_prev(session, page, sort_by_dim):
@@ -556,6 +582,7 @@ with gr.Blocks(title="IFCB Plankton Classifier") as demo:
 
     session = gr.State(None)
     page = gr.State(0)
+    zip_file = gr.State(None)
 
     gr.HTML(
         "<h1 class='main-title'>IFCB Plankton Classifier</h1>"
@@ -585,11 +612,22 @@ with gr.Blocks(title="IFCB Plankton Classifier") as demo:
                     variant="secondary",
                     size="lg",
                 )
+                clear_btn = gr.Button(
+                    "Clear",
+                    variant="stop",
+                    size="lg",
+                )
 
         with gr.Column(scale=1):
             label_output = gr.HTML(
                 value=render_predictions({}),
                 label="Predictions",
+            )
+            filename_box = gr.Textbox(
+                label="Filename",
+                interactive=False,
+                buttons=["copy"],
+                visible=False,
             )
 
     with gr.Row(elem_id="sort-row"):
@@ -619,24 +657,48 @@ with gr.Blocks(title="IFCB Plankton Classifier") as demo:
         next_btn = gr.Button("Next >", size="sm", scale=1, interactive=False)
 
     classify_btn.click(
+        fn=disable_actions,
+        outputs=[classify_btn, zip_btn],
+    ).then(
         fn=predict_html,
         inputs=[image_input],
         outputs=[label_output],
+    ).then(
+        fn=enable_actions,
+        outputs=[classify_btn, zip_btn],
     )
     image_input.upload(
+        fn=disable_actions,
+        outputs=[classify_btn, zip_btn],
+    ).then(
         fn=handle_image_upload,
         inputs=[image_input, session, page, sort_by_dim],
-        outputs=[session, image_input, gallery, page, page_info, prev_btn, next_btn, label_output],
+        outputs=[session, image_input, gallery, page, page_info, prev_btn, next_btn, label_output, filename_box],
+    ).then(
+        fn=enable_actions,
+        outputs=[classify_btn, zip_btn],
     )
     zip_btn.upload(
+        fn=capture_zip_and_disable,
+        inputs=[zip_btn],
+        outputs=[zip_file, classify_btn, zip_btn],
+    ).then(
         fn=handle_zip_upload,
-        inputs=[zip_btn, session, page, sort_by_dim],
+        inputs=[zip_file, session, page, sort_by_dim],
         outputs=[session, gallery, page, page_info, prev_btn, next_btn],
+    ).then(
+        fn=enable_actions,
+        outputs=[classify_btn, zip_btn],
+    )
+    clear_btn.click(
+        fn=clear_session,
+        inputs=[session],
+        outputs=[session, gallery, page, page_info, image_input, label_output, filename_box, prev_btn, next_btn],
     )
     gallery.select(
         fn=on_gallery_select,
         inputs=[session, page, sort_by_dim],
-        outputs=[image_input, label_output],
+        outputs=[image_input, label_output, filename_box],
     )
     prev_btn.click(
         fn=go_prev,
