@@ -1,9 +1,11 @@
 import json
 import os
 
+import numpy as np
 import torch
 import torchvision.models as models
 from torchvision.transforms import v2 as transforms
+from PIL import Image as PILImage
 
 from utils.CustomTransforms import SquarePad
 
@@ -111,9 +113,21 @@ def render_predictions(predictions):
     return '<div class="pred-panel">' + ''.join(rows) + legend + '</div>'
 
 
-async def predict(image):
+def stretch_contrast(image):
+    arr = np.array(image, dtype=np.float64)
+    lo, hi = arr.min(), arr.max()
+    if lo == hi:
+        return image
+    stretched = ((arr - lo) / (hi - lo) * 255.0).clip(0, 255).astype(np.uint8)
+    return PILImage.fromarray(stretched, mode=image.mode)
+
+
+async def predict(image, stretch=False):
     if image is None:
         return {}
+
+    if stretch:
+        image = stretch_contrast(image)
 
     image_rgb = image.convert('RGB')
     tensor = image_transform(image_rgb).unsqueeze(0)
@@ -128,8 +142,8 @@ async def predict(image):
     }
 
 
-async def predict_html(image):
-    preds = await predict(image)
+async def predict_html(image, stretch=False):
+    preds = await predict(image, stretch=stretch)
     return render_predictions(preds)
 
 
@@ -146,6 +160,13 @@ def build_about_markdown():
         f"- **Parameters:** {num_params:,}\n"
         f"- **Input size:** 224 x 224 (square-padded)\n"
         f"- **Classes:** {len(labels)}\n\n"
+        "## Image extraction\n\n"
+        "This model was trained on images extracted with "
+        "[`iRfcb::ifcb_extract_pngs()`]"
+        "(https://europeanifcbgroup.github.io/iRfcb/), "
+        "which produces full-range [0, 255] PNGs, and expects the same format as input. "
+        "Images exported by the IFCB Dashboard use a compressed pixel range "
+        "and will classify poorly unless **Contrast stretch** is enabled.\n\n"
         "## Training data\n\n"
         "Fine-tuned using image data from the "
         "[SMHI IFCB Plankton Image Reference Library]"

@@ -56,7 +56,7 @@ def nav_buttons(session, page):
     )
 
 
-async def handle_image_upload(image, session, page, sort_by_dim):
+async def handle_image_upload(image, session, page, sort_by_dim, stretch):
     if image is None:
         prev, nxt = nav_buttons(session, page)
         return session, gr.Image(label="Upload image"), gallery_page(session, page, sort_by_dim), page, page_info_text(session, page), prev, nxt, render_predictions({}), gr.Textbox(value="", visible=False)
@@ -65,7 +65,7 @@ async def handle_image_upload(image, session, page, sort_by_dim):
         original_name = os.path.basename(image.filename)
     session = save_image(image, session, original_name)
     page = 0
-    preds = await predict(image)
+    preds = await predict(image, stretch=stretch)
     prev, nxt = nav_buttons(session, page)
     label = os.path.splitext(original_name)[0] if original_name else "Upload image"
     return session, gr.Image(value=image, label=label), gallery_page(session, page, sort_by_dim), page, page_info_text(session, page), prev, nxt, render_predictions(preds), gr.Textbox(value=label if label != "Upload image" else "", visible=label != "Upload image")
@@ -341,6 +341,7 @@ with gr.Blocks(title="IFCB Plankton Classifier") as demo:
         with gr.Column(scale=1):
             image_input = gr.Image(
                 type="pil",
+                format="png",
                 label="Upload image",
                 sources=["upload", "clipboard"],
                 height=350,
@@ -363,6 +364,11 @@ with gr.Blocks(title="IFCB Plankton Classifier") as demo:
                     variant="stop",
                     size="lg",
                 )
+            stretch_toggle = gr.Checkbox(
+                label="Contrast stretch",
+                value=False,
+                info="Apply per-image min-max stretch (use for Dashboard-extracted images)",
+            )
 
         with gr.Column(scale=1):
             label_output = gr.HTML(
@@ -407,7 +413,7 @@ with gr.Blocks(title="IFCB Plankton Classifier") as demo:
         outputs=[classify_btn, zip_btn],
     ).then(
         fn=predict_html,
-        inputs=[image_input],
+        inputs=[image_input, stretch_toggle],
         outputs=[label_output],
     ).then(
         fn=enable_actions,
@@ -418,7 +424,7 @@ with gr.Blocks(title="IFCB Plankton Classifier") as demo:
         outputs=[classify_btn, zip_btn],
     ).then(
         fn=handle_image_upload,
-        inputs=[image_input, session, page, sort_by_dim],
+        inputs=[image_input, session, page, sort_by_dim, stretch_toggle],
         outputs=[session, image_input, gallery, page, page_info, prev_btn, next_btn, label_output, filename_box],
     ).then(
         fn=enable_actions,
@@ -447,7 +453,7 @@ with gr.Blocks(title="IFCB Plankton Classifier") as demo:
         outputs=[image_input, filename_box],
     ).then(
         fn=predict_html,
-        inputs=[image_input],
+        inputs=[image_input, stretch_toggle],
         outputs=[label_output],
     )
     prev_btn.click(
