@@ -9,6 +9,7 @@ from PIL import Image
 from model import (
     predict, predict_html, render_predictions,
     build_about_markdown,
+    AVAILABLE_MODELS, DEFAULT_MODEL,
 )
 from session import (
     init_session, save_image, sorted_indices,
@@ -56,7 +57,7 @@ def nav_buttons(session, page):
     )
 
 
-async def handle_image_upload(image, session, page, sort_by_dim, stretch):
+async def handle_image_upload(image, session, page, sort_by_dim, model_name):
     if image is None:
         prev, nxt = nav_buttons(session, page)
         return session, gr.Image(label="Upload image"), gallery_page(session, page, sort_by_dim), page, page_info_text(session, page), prev, nxt, render_predictions({}), gr.Textbox(value="", visible=False)
@@ -65,10 +66,10 @@ async def handle_image_upload(image, session, page, sort_by_dim, stretch):
         original_name = os.path.basename(image.filename)
     session = save_image(image, session, original_name)
     page = 0
-    preds = await predict(image, stretch=stretch)
+    preds = await predict(image, model_name=model_name)
     prev, nxt = nav_buttons(session, page)
     label = os.path.splitext(original_name)[0] if original_name else "Upload image"
-    return session, gr.Image(value=image, label=label), gallery_page(session, page, sort_by_dim), page, page_info_text(session, page), prev, nxt, render_predictions(preds), gr.Textbox(value=label if label != "Upload image" else "", visible=label != "Upload image")
+    return session, gr.Image(value=image, label=label), gallery_page(session, page, sort_by_dim), page, page_info_text(session, page), prev, nxt, render_predictions(preds, model_name=model_name), gr.Textbox(value=label if label != "Upload image" else "", visible=label != "Upload image")
 
 
 async def handle_zip_upload(zip_path, session, page, sort_by_dim):
@@ -144,6 +145,10 @@ def on_sort_change(session, sort_by_dim):
     page = 0
     prev, nxt = nav_buttons(session, page)
     return gallery_page(session, page, sort_by_dim), page, page_info_text(session, page), prev, nxt
+
+
+def update_about(model_name):
+    return build_about_markdown(model_name)
 
 
 # --- UI ---
@@ -364,10 +369,10 @@ with gr.Blocks(title="IFCB Plankton Classifier") as demo:
                     variant="stop",
                     size="lg",
                 )
-            stretch_toggle = gr.Checkbox(
-                label="Contrast stretch",
-                value=False,
-                info="Apply per-image min-max stretch (use for Dashboard-extracted images)",
+            model_dropdown = gr.Dropdown(
+                choices=list(AVAILABLE_MODELS.keys()),
+                value=DEFAULT_MODEL,
+                label="Model",
             )
 
         with gr.Column(scale=1):
@@ -413,7 +418,7 @@ with gr.Blocks(title="IFCB Plankton Classifier") as demo:
         outputs=[classify_btn, zip_btn],
     ).then(
         fn=predict_html,
-        inputs=[image_input, stretch_toggle],
+        inputs=[image_input, model_dropdown],
         outputs=[label_output],
     ).then(
         fn=enable_actions,
@@ -424,7 +429,7 @@ with gr.Blocks(title="IFCB Plankton Classifier") as demo:
         outputs=[classify_btn, zip_btn],
     ).then(
         fn=handle_image_upload,
-        inputs=[image_input, session, page, sort_by_dim, stretch_toggle],
+        inputs=[image_input, session, page, sort_by_dim, model_dropdown],
         outputs=[session, image_input, gallery, page, page_info, prev_btn, next_btn, label_output, filename_box],
     ).then(
         fn=enable_actions,
@@ -453,7 +458,7 @@ with gr.Blocks(title="IFCB Plankton Classifier") as demo:
         outputs=[image_input, filename_box],
     ).then(
         fn=predict_html,
-        inputs=[image_input, stretch_toggle],
+        inputs=[image_input, model_dropdown],
         outputs=[label_output],
     )
     prev_btn.click(
@@ -473,7 +478,13 @@ with gr.Blocks(title="IFCB Plankton Classifier") as demo:
     )
 
     with gr.Accordion("About", open=False):
-        gr.Markdown(build_about_markdown())
+        about_md = gr.Markdown(build_about_markdown(DEFAULT_MODEL))
+
+    model_dropdown.change(
+        fn=update_about,
+        inputs=[model_dropdown],
+        outputs=[about_md],
+    )
 
 demo.launch(
     server_name="0.0.0.0",

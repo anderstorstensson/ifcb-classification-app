@@ -1,18 +1,35 @@
 import json
 import os
 
-import numpy as np
 import torch
 import torchvision.models as models
 from torchvision.transforms import v2 as transforms
-from PIL import Image as PILImage
 
 from utils.CustomTransforms import SquarePad
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-MODEL_DIR = os.path.join(BASE_DIR, 'data', 'models', 'ifcb-plankton-resnet50')
 
 NUM_TOP_CLASSES = 5
+
+MODELS_DIR = os.path.join(BASE_DIR, 'data', 'models')
+
+
+def discover_models():
+    models_found = {}
+    for name in sorted(os.listdir(MODELS_DIR), reverse=True):
+        model_dir = os.path.join(MODELS_DIR, name)
+        if (os.path.isdir(model_dir)
+                and os.path.isfile(os.path.join(model_dir, 'classes.txt'))
+                and os.path.isfile(os.path.join(model_dir, 'weights.pth'))):
+            display_name = name.replace('-', ' ')
+            models_found[display_name] = name
+    return models_found
+
+
+AVAILABLE_MODELS = discover_models()
+DEFAULT_MODEL = next(iter(AVAILABLE_MODELS)) if AVAILABLE_MODELS else None
+
+_loaded_models = {}
 
 
 def load_labels(path):
@@ -29,11 +46,6 @@ def build_resnet50(num_classes, weights_path):
     return net
 
 
-labels = load_labels(os.path.join(MODEL_DIR, 'classes.txt'))
-model = build_resnet50(len(labels), os.path.join(MODEL_DIR, 'weights.pth'))
-
-num_params = sum(p.numel() for p in model.parameters())
-
 image_transform = transforms.Compose([
     transforms.ToImage(),
     transforms.ToDtype(torch.float32, scale=True),
@@ -46,7 +58,7 @@ def format_label(name):
     return name.replace('_', ' ')
 
 
-def load_thresholds(path):
+def load_thresholds(path, labels):
     if not os.path.exists(path):
         return {}, {}
     with open(path, 'r') as f:
@@ -63,18 +75,46 @@ def load_thresholds(path):
     return thresholds, meta
 
 
-class_thresholds, threshold_meta = load_thresholds(
-    os.path.join(MODEL_DIR, 'thresholds.json')
-)
+def get_model(name=None):
+    if name is None:
+        name = DEFAULT_MODEL
+    if name in _loaded_models:
+        return _loaded_models[name]
+
+    dir_name = AVAILABLE_MODELS[name]
+    model_dir = os.path.join(BASE_DIR, 'data', 'models', dir_name)
+
+    labels = load_labels(os.path.join(model_dir, 'classes.txt'))
+    net = build_resnet50(len(labels), os.path.join(model_dir, 'weights.pth'))
+    thresholds, threshold_meta = load_thresholds(
+        os.path.join(model_dir, 'thresholds.json'), labels
+    )
+    num_params = sum(p.numel() for p in net.parameters())
+
+    _loaded_models[name] = (labels, net, thresholds, threshold_meta, num_params)
+    return _loaded_models[name]
 
 
-def render_predictions(predictions):
+def render_predictions(predictions, model_name=None):
     if not predictions:
         return '<div class="pred-panel"><p class="pred-empty">No predictions</p></div>'
+
+    if model_name:
+        _, _, class_thresholds, _, _ = get_model(model_name)
+    else:
+        class_thresholds = {}
 
     sorted_preds = sorted(
         predictions.items(), key=lambda x: x[1], reverse=True
     )[:NUM_TOP_CLASSES]
+
+    model_subtitle = ""
+    if model_name:
+        model_subtitle = (
+            f'<div class="pred-model-name"'
+            f' style="font-size:0.85em;opacity:0.6;margin-bottom:8px">'
+            f'{model_name}</div>'
+        )
 
     rows = []
     for name, prob in sorted_preds:
@@ -110,30 +150,20 @@ def render_predictions(predictions):
         '</div>'
     )
 
-    return '<div class="pred-panel">' + ''.join(rows) + legend + '</div>'
+    return '<div class="pred-panel">' + model_subtitle + ''.join(rows) + legend + '</div>'
 
 
-def stretch_contrast(image):
-    arr = np.array(image, dtype=np.float64)
-    lo, hi = arr.min(), arr.max()
-    if lo == hi:
-        return image
-    stretched = ((arr - lo) / (hi - lo) * 255.0).clip(0, 255).astype(np.uint8)
-    return PILImage.fromarray(stretched, mode=image.mode)
-
-
-async def predict(image, stretch=False):
+async def predict(image, model_name=None):
     if image is None:
         return {}
 
-    if stretch:
-        image = stretch_contrast(image)
+    labels, net, _, _, _ = get_model(model_name)
 
     image_rgb = image.convert('RGB')
     tensor = image_transform(image_rgb).unsqueeze(0)
 
     with torch.no_grad():
-        logits = model(tensor)[0]
+        logits = net(tensor)[0]
         probs = torch.nn.functional.softmax(logits, dim=0)
 
     return {
@@ -142,17 +172,18 @@ async def predict(image, stretch=False):
     }
 
 
-async def predict_html(image, stretch=False):
-    preds = await predict(image, stretch=stretch)
-    return render_predictions(preds)
+async def predict_html(image, model_name=None):
+    preds = await predict(image, model_name=model_name)
+    return render_predictions(preds, model_name=model_name)
 
 
-def build_about_markdown():
+def build_about_markdown(model_name=None):
+    labels, _, _, threshold_meta, num_params = get_model(model_name)
     class_list = "\n".join(
         f"1. {format_label(name)}" for name in labels
     )
-    model_name = threshold_meta.get("model_name", "")
-    model_name_line = f"- **Model name:** {model_name}\n" if model_name else ""
+    meta_model_name = threshold_meta.get("model_name", "")
+    model_name_line = f"- **Model name:** {meta_model_name}\n" if meta_model_name else ""
     return (
         "## Model\n\n"
         f"{model_name_line}"
@@ -160,13 +191,6 @@ def build_about_markdown():
         f"- **Parameters:** {num_params:,}\n"
         f"- **Input size:** 224 x 224 (square-padded)\n"
         f"- **Classes:** {len(labels)}\n\n"
-        "## Image extraction\n\n"
-        "This model was trained on images extracted with "
-        "[`iRfcb::ifcb_extract_pngs()`]"
-        "(https://europeanifcbgroup.github.io/iRfcb/), "
-        "which produces full-range [0, 255] PNGs, and expects the same format as input. "
-        "Images exported by the IFCB Dashboard use a compressed pixel range "
-        "and will classify poorly unless **Contrast stretch** is enabled.\n\n"
         "## Training data\n\n"
         "Fine-tuned using image data from the "
         "[SMHI IFCB Plankton Image Reference Library]"
