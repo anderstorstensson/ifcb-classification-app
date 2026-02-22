@@ -172,6 +172,22 @@ async def predict(image, model_name=None):
     }
 
 
+async def predict_scores(image, model_name=None):
+    """Return all class scores as a JSON-serialisable dict.
+
+    Returns:
+        {"class_labels": [...], "scores": [...]}
+    where scores are ordered to match class_labels.
+    """
+    preds = await predict(image, model_name=model_name)
+    if not preds:
+        return {"class_labels": [], "scores": []}
+    labels, _, _, _, _ = get_model(model_name)
+    ordered_labels = [format_label(name) for name in labels]
+    ordered_scores = [preds.get(label, 0.0) for label in ordered_labels]
+    return {"class_labels": ordered_labels, "scores": ordered_scores}
+
+
 async def predict_html(image, model_name=None):
     preds = await predict(image, model_name=model_name)
     return render_predictions(preds, model_name=model_name)

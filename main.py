@@ -7,7 +7,7 @@ import gradio as gr
 from PIL import Image
 
 from model import (
-    predict, predict_html, render_predictions,
+    predict, predict_html, predict_scores, render_predictions,
     build_about_markdown, get_thresholds,
     AVAILABLE_MODELS, DEFAULT_MODEL,
 )
@@ -499,6 +499,22 @@ with gr.Blocks(title="IFCB Plankton Classifier") as demo:
         inputs=[thresholds_model],
         outputs=[thresholds_output],
         api_name="get_thresholds",
+    )
+
+    # --- API-only endpoint: predict_scores (returns all class scores as JSON) ---
+    scores_image = gr.Image(type="pil", visible=False)
+    scores_model = gr.Dropdown(
+        choices=list(AVAILABLE_MODELS.keys()),
+        value=DEFAULT_MODEL,
+        visible=False,
+    )
+    scores_output = gr.JSON(visible=False)
+    scores_btn = gr.Button(visible=False)
+    scores_btn.click(
+        fn=predict_scores,
+        inputs=[scores_image, scores_model],
+        outputs=[scores_output],
+        api_name="predict_scores",
     )
 
 demo.launch(

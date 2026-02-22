@@ -1,6 +1,6 @@
 [project]
 name = "ifcb-classification-app"
-version = "0.2.1"
+version = "0.2.2"
 description = "Classify phytoplankton images using a fine-tuned ResNet-50"
 license = "MIT"
 requires-python = ">=3.11"
