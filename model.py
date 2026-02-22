@@ -177,6 +177,24 @@ async def predict_html(image, model_name=None):
     return render_predictions(preds, model_name=model_name)
 
 
+def get_thresholds(model_name=None):
+    """Return per-class thresholds and class labels for a model.
+
+    Returns a JSON-serialisable dict with:
+      - class_labels: list of class names (same order as score columns)
+      - thresholds: dict mapping class name -> optimal F2 threshold
+      - model_name: display name passed in (or the default)
+    """
+    if model_name is None:
+        model_name = DEFAULT_MODEL
+    labels, _, thresholds, _, _ = get_model(model_name)
+    return {
+        "class_labels": [format_label(name) for name in labels],
+        "thresholds": thresholds,
+        "model_name": model_name,
+    }
+
+
 def build_about_markdown(model_name=None):
     labels, _, _, threshold_meta, num_params = get_model(model_name)
     class_list = "\n".join(

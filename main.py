@@ -8,7 +8,7 @@ from PIL import Image
 
 from model import (
     predict, predict_html, render_predictions,
-    build_about_markdown,
+    build_about_markdown, get_thresholds,
     AVAILABLE_MODELS, DEFAULT_MODEL,
 )
 from session import (
@@ -484,6 +484,21 @@ with gr.Blocks(title="IFCB Plankton Classifier") as demo:
         fn=update_about,
         inputs=[model_dropdown],
         outputs=[about_md],
+    )
+
+    # --- API-only endpoint (not visible in the UI) ---
+    thresholds_btn = gr.Button(visible=False)
+    thresholds_model = gr.Dropdown(
+        choices=list(AVAILABLE_MODELS.keys()),
+        value=DEFAULT_MODEL,
+        visible=False,
+    )
+    thresholds_output = gr.JSON(visible=False)
+    thresholds_btn.click(
+        fn=get_thresholds,
+        inputs=[thresholds_model],
+        outputs=[thresholds_output],
+        api_name="get_thresholds",
     )
 
 demo.launch(
