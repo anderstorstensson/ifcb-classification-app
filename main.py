@@ -20,6 +20,22 @@ from session import (
 )
 
 
+MAX_DISPLAY_SCALE = 3
+DISPLAY_TARGET = 400
+
+
+def display_image(img):
+    """Upscale a small image for display, capped at MAX_DISPLAY_SCALE."""
+    if img is None:
+        return img
+    w, h = img.size
+    scale = min(MAX_DISPLAY_SCALE, DISPLAY_TARGET / max(w, h, 1))
+    if scale > 1:
+        new_w, new_h = int(w * scale), int(h * scale)
+        return img.resize((new_w, new_h), Image.NEAREST)
+    return img
+
+
 # --- Event handlers ---
 
 
@@ -32,7 +48,8 @@ def enable_actions():
 
 
 def capture_zip_and_disable(file):
-    return file, gr.Button(interactive=False), gr.UploadButton(interactive=False)
+    status = "<span>Processing ZIP file…</span>" if file else ""
+    return file, gr.Button(interactive=False), gr.UploadButton(interactive=False), status
 
 
 def clear_session(session):
@@ -69,13 +86,13 @@ async def handle_image_upload(image, session, page, sort_by_dim, model_name):
     preds = await predict(image, model_name=model_name)
     prev, nxt = nav_buttons(session, page)
     label = os.path.splitext(original_name)[0] if original_name else "Upload image"
-    return session, gr.Image(value=image, label=label), gallery_page(session, page, sort_by_dim), page, page_info_text(session, page), prev, nxt, render_predictions(preds, model_name=model_name), gr.Textbox(value=label if label != "Upload image" else "", visible=label != "Upload image")
+    return session, gr.Image(value=display_image(image), label=label), gallery_page(session, page, sort_by_dim), page, page_info_text(session, page), prev, nxt, render_predictions(preds, model_name=model_name), gr.Textbox(value=label if label != "Upload image" else "", visible=label != "Upload image")
 
 
-async def handle_zip_upload(zip_path, session, page, sort_by_dim):
+async def handle_zip_upload(zip_path, session, page, sort_by_dim, progress=gr.Progress(track_tqdm=False)):
     if zip_path is None:
         prev, nxt = nav_buttons(session, page)
-        return session, gallery_page(session, page, sort_by_dim), page, page_info_text(session, page), prev, nxt
+        return session, gallery_page(session, page, sort_by_dim), page, page_info_text(session, page), prev, nxt, ""
     session = init_session(session)
     try:
         with zipfile.ZipFile(zip_path, 'r') as zf:
@@ -88,9 +105,11 @@ async def handle_zip_upload(zip_path, session, page, sort_by_dim):
             if len(entries) > MAX_ZIP_FILES:
                 gr.Warning(f"ZIP contains too many files (max {MAX_ZIP_FILES}).")
                 prev, nxt = nav_buttons(session, page)
-                return session, gallery_page(session, page, sort_by_dim), page, page_info_text(session, page), prev, nxt
+                return session, gallery_page(session, page, sort_by_dim), page, page_info_text(session, page), prev, nxt, ""
             total_read = 0
-            for info in entries:
+            total = len(entries)
+            for i, info in enumerate(entries):
+                progress((i, total), desc=f"Extracting images ({i}/{total})")
                 try:
                     with zf.open(info) as f:
                         data = f.read(MAX_SINGLE_FILE_BYTES + 1)
@@ -112,7 +131,7 @@ async def handle_zip_upload(zip_path, session, page, sort_by_dim):
         gr.Warning("Error processing ZIP file.")
     page = 0
     prev, nxt = nav_buttons(session, page)
-    return session, gallery_page(session, page, sort_by_dim), page, page_info_text(session, page), prev, nxt
+    return session, gallery_page(session, page, sort_by_dim), page, page_info_text(session, page), prev, nxt, ""
 
 
 def on_gallery_select(session, page, sort_by_dim, evt: gr.SelectData):
@@ -126,7 +145,7 @@ def on_gallery_select(session, page, sort_by_dim, evt: gr.SelectData):
     img = Image.open(paths[idx])
     name = names[idx] if idx < len(names) else ""
     label = os.path.splitext(name)[0] if name else "Upload image"
-    return gr.Image(value=img, label=label), gr.Textbox(value=label if label != "Upload image" else "", visible=label != "Upload image")
+    return gr.Image(value=display_image(img), label=label), gr.Textbox(value=label if label != "Upload image" else "", visible=label != "Upload image")
 
 
 def go_prev(session, page, sort_by_dim):
@@ -164,20 +183,7 @@ css = """
     margin-top: 0;
     font-size: 1.05em;
 }
-.image-lightbox {
-    position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.85);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 10000;
-    cursor: pointer;
-}
-.image-lightbox img {
-    max-width: 90vw;
-    max-height: 90vh;
-    object-fit: contain;
+#image-input .image-frame img {
     image-rendering: pixelated;
 }
 .page-info {
@@ -235,6 +241,26 @@ css = """
 }
 #sort-toggle input[type="checkbox"]:checked::after {
     transform: translateX(20px) !important;
+}
+#session-gallery .grid-wrap {
+    overflow-y: visible !important;
+}
+#session-gallery .fixed-height {
+    min-height: 0 !important;
+    max-height: none !important;
+}
+#session-gallery .grid-container {
+    grid-template-columns: repeat(var(--grid-cols), minmax(60px, 1fr)) !important;
+    grid-template-rows: repeat(var(--grid-rows), minmax(60px, 1fr)) !important;
+    grid-auto-rows: minmax(60px, 1fr) !important;
+}
+#zip-status {
+    text-align: center;
+    font-size: 0.95em;
+    color: var(--color-accent, #3b82f6);
+    font-weight: 500;
+    min-height: 0;
+    display: none;
 }
 .pred-panel {
     padding: 12px 0;
@@ -307,19 +333,31 @@ css = """
 }
 """
 
-lightbox_js = """
+init_js = """
 () => {
-    document.addEventListener('click', (e) => {
-        const img = e.target.closest('#image-input img');
-        if (!img || !img.src) return;
-        const overlay = document.createElement('div');
-        overlay.className = 'image-lightbox';
-        const enlarged = document.createElement('img');
-        enlarged.src = img.src;
-        overlay.appendChild(enlarged);
-        overlay.onclick = () => overlay.remove();
-        document.body.appendChild(overlay);
+    /* Disable buttons and show status as soon as a ZIP file is selected,
+       before the upload transfer finishes. */
+    const observer = new MutationObserver(() => {
+        const zipBtn = document.querySelector('#zip-btn');
+        if (!zipBtn) return;
+        const fileInput = zipBtn.querySelector('input[type="file"]');
+        if (!fileInput || fileInput.dataset.listening) return;
+        fileInput.dataset.listening = '1';
+        fileInput.addEventListener('change', () => {
+            if (!fileInput.files || fileInput.files.length === 0) return;
+            const classifyBtn = document.querySelector('#classify-btn button');
+            const uploadBtn = zipBtn.querySelector('button');
+            if (classifyBtn) { classifyBtn.disabled = true; classifyBtn.style.opacity = '0.5'; }
+            if (uploadBtn) { uploadBtn.disabled = true; uploadBtn.style.opacity = '0.5'; }
+            const statusEl = document.querySelector('#zip-status');
+            if (statusEl) {
+                const sizeMB = (fileInput.files[0].size / (1024 * 1024)).toFixed(1);
+                statusEl.textContent = 'Uploading ZIP (' + sizeMB + ' MB)…';
+                statusEl.style.display = 'block';
+            }
+        });
     });
+    observer.observe(document.body, { childList: true, subtree: true });
 }
 """
 
@@ -349,26 +387,34 @@ with gr.Blocks(title="IFCB Plankton Classifier") as demo:
                 format="png",
                 label="Upload image",
                 sources=["upload", "clipboard"],
-                height=350,
+                height=500,
                 elem_id="image-input",
+                buttons=["download"],
             )
             with gr.Row():
                 classify_btn = gr.Button(
                     "Classify",
                     variant="primary",
                     size="lg",
+                    elem_id="classify-btn",
                 )
                 zip_btn = gr.UploadButton(
                     "Upload ZIP",
                     file_types=[".zip"],
                     variant="secondary",
                     size="lg",
+                    elem_id="zip-btn",
                 )
                 clear_btn = gr.Button(
                     "Clear",
                     variant="stop",
                     size="lg",
                 )
+            zip_status = gr.HTML(
+                value="",
+                elem_id="zip-status",
+                visible=True,
+            )
             model_dropdown = gr.Dropdown(
                 choices=list(AVAILABLE_MODELS.keys()),
                 value=DEFAULT_MODEL,
@@ -399,9 +445,10 @@ with gr.Blocks(title="IFCB Plankton Classifier") as demo:
 
     gallery = gr.Gallery(
         label="Session images (click to classify)",
-        columns=6,
+        columns=10,
         object_fit="contain",
         allow_preview=False,
+        elem_id="session-gallery",
     )
 
     with gr.Row():
@@ -438,14 +485,15 @@ with gr.Blocks(title="IFCB Plankton Classifier") as demo:
     zip_btn.upload(
         fn=capture_zip_and_disable,
         inputs=[zip_btn],
-        outputs=[zip_file, classify_btn, zip_btn],
+        outputs=[zip_file, classify_btn, zip_btn, zip_status],
     ).then(
         fn=handle_zip_upload,
         inputs=[zip_file, session, page, sort_by_dim],
-        outputs=[session, gallery, page, page_info, prev_btn, next_btn],
+        outputs=[session, gallery, page, page_info, prev_btn, next_btn, zip_status],
     ).then(
         fn=enable_actions,
         outputs=[classify_btn, zip_btn],
+        js="() => { const cb = document.querySelector('#classify-btn button'); const zb = document.querySelector('#zip-btn button'); if (cb) cb.style.opacity = ''; if (zb) zb.style.opacity = ''; }",
     )
     clear_btn.click(
         fn=clear_session,
@@ -522,6 +570,6 @@ demo.launch(
     server_port=7860,
     theme=theme,
     css=css,
-    js=lightbox_js,
+    js=init_js,
     max_file_size="50mb",
 )

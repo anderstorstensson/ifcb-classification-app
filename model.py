@@ -9,6 +9,12 @@ from utils.CustomTransforms import SquarePad
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
+DEVICE = torch.device(
+    'cuda' if torch.cuda.is_available()
+    else 'mps' if torch.backends.mps.is_available()
+    else 'cpu'
+)
+
 NUM_TOP_CLASSES = 5
 
 MODELS_DIR = os.path.join(BASE_DIR, 'data', 'models')
@@ -40,10 +46,10 @@ def load_labels(path):
 def build_resnet50(num_classes, weights_path):
     net = models.resnet50()
     net.fc = torch.nn.Linear(net.fc.in_features, num_classes)
-    state_dict = torch.load(weights_path, map_location='cpu', weights_only=True)
+    state_dict = torch.load(weights_path, map_location=DEVICE, weights_only=True)
     net.load_state_dict(state_dict)
     net.eval()
-    return net
+    return net.to(DEVICE)
 
 
 image_transform = transforms.Compose([
@@ -160,7 +166,7 @@ async def predict(image, model_name=None):
     labels, net, _, _, _ = get_model(model_name)
 
     image_rgb = image.convert('RGB')
-    tensor = image_transform(image_rgb).unsqueeze(0)
+    tensor = image_transform(image_rgb).unsqueeze(0).to(DEVICE)
 
     with torch.no_grad():
         logits = net(tensor)[0]
