@@ -1,6 +1,7 @@
 import io
 import os
 import shutil
+import tomllib
 import zipfile
 
 import gradio as gr
@@ -18,6 +19,11 @@ from session import (
     IMAGE_EXTENSIONS, IMAGES_PER_PAGE,
     MAX_ZIP_BYTES, MAX_ZIP_FILES, MAX_SINGLE_FILE_BYTES,
 )
+
+
+_pyproject = os.path.join(os.path.dirname(os.path.abspath(__file__)), "pyproject.toml")
+with open(_pyproject, "rb") as _f:
+    VERSION = tomllib.load(_f)["project"]["version"]
 
 
 MAX_DISPLAY_SCALE = 3
@@ -377,6 +383,7 @@ with gr.Blocks(title="IFCB Plankton Classifier") as demo:
         "<h1 class='main-title'>IFCB Plankton Classifier</h1>"
         "<p class='subtitle'>"
         "Classify phytoplankton images using a fine-tuned ResNet-50 for the Skagerrak, Kattegat, and Baltic sea"
+        f" &middot; v{VERSION}"
         "</p>"
     )
 
