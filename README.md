@@ -13,7 +13,7 @@ A web application for classifying phytoplankton images from Imaging FlowCytobot 
 
 ## Models
 
-The app auto-discovers models from the `data/models/` directory. Each model needs a subdirectory containing `weights.pth`, `classes.txt`, and optionally `thresholds.json`. Model weights are not included in the repository — contact the author to obtain them.
+The app auto-discovers models from the `data/models/` directory. Each model needs a subdirectory containing `weights.pth`, `classes.txt`, and optionally `thresholds.json` and `about.md`. Model weights are not included in the repository — contact the author to obtain them.
 
 The included example configuration (SMHI-NIVA-ResNet50-V5) expects:
 
@@ -87,7 +87,8 @@ See the Gradio API docs at `http://localhost:7860/?view=api` when the app is run
 │       └── SMHI-NIVA-ResNet50-V5/
 │           ├── weights.pth      # Model weights (git-ignored)
 │           ├── classes.txt      # Class labels
-│           └── thresholds.json  # Per-class F2 thresholds
+│           ├── thresholds.json  # Per-class F2 thresholds
+│           └── about.md         # Model description (optional)
 ├── requirements.txt        # Python dependencies
 ├── pyproject.toml          # Project metadata and version
 ├── Dockerfile
