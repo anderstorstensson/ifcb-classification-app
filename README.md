@@ -59,7 +59,7 @@ docker run -p 7860:7860 ifcb-classification-app
 │   └── CustomTransforms.py # Square-pad transform
 ├── data/
 │   └── models/
-│       └── ifcb-plankton-resnet50/
+│       └── SMHI-NIVA-ResNet50-V5/
 │           ├── weights.pth      # Model weights (git-ignored)
 │           ├── classes.txt      # Class labels
 │           └── thresholds.json  # Per-class F2 thresholds
