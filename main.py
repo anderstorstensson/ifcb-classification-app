@@ -373,7 +373,7 @@ theme = gr.themes.Soft(
     font=gr.themes.GoogleFont("Inter"),
 )
 
-with gr.Blocks(title="IFCB Plankton Classifier") as demo:
+with gr.Blocks(title="IFCB Plankton Classifier") as app:
 
     session = gr.State(None)
     page = gr.State(0)
@@ -381,10 +381,7 @@ with gr.Blocks(title="IFCB Plankton Classifier") as demo:
 
     gr.HTML(
         "<h1 class='main-title'>IFCB Plankton Classifier</h1>"
-        "<p class='subtitle'>"
-        "Classify phytoplankton images using a fine-tuned ResNet-50 for the Skagerrak, Kattegat, and Baltic sea"
-        f" &middot; v{VERSION}"
-        "</p>"
+        f"<p class='subtitle'>v{VERSION}</p>"
     )
 
     with gr.Row(equal_height=True):
@@ -572,7 +569,7 @@ with gr.Blocks(title="IFCB Plankton Classifier") as demo:
         api_name="predict_scores",
     )
 
-demo.launch(
+app.launch(
     server_name="0.0.0.0",
     server_port=7860,
     theme=theme,
