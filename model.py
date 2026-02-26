@@ -67,7 +67,7 @@ def load_thresholds(path, labels):
     for idx_str, metrics in data.get("class_metrics", {}).items():
         idx = int(idx_str)
         if idx < len(labels):
-            thresholds[format_label(labels[idx])] = metrics["threshold"]
+            thresholds[labels[idx]] = metrics["threshold"]
     meta = {
         k: v for k, v in data.items()
         if k != "class_metrics"
@@ -167,7 +167,7 @@ async def predict(image, model_name=None):
         probs = torch.nn.functional.softmax(logits, dim=0)
 
     return {
-        format_label(labels[i]): float(probs[i])
+        labels[i]: float(probs[i])
         for i in range(len(labels))
     }
 
@@ -183,7 +183,7 @@ async def predict_scores(image, model_name=None):
     if not preds:
         return {"class_labels": [], "scores": []}
     labels, _, _, _, _ = get_model(model_name)
-    ordered_labels = [format_label(name) for name in labels]
+    ordered_labels = list(labels)
     ordered_scores = [preds.get(label, 0.0) for label in ordered_labels]
     return {"class_labels": ordered_labels, "scores": ordered_scores}
 
@@ -205,7 +205,7 @@ def get_thresholds(model_name=None):
         model_name = DEFAULT_MODEL
     labels, _, thresholds, _, _ = get_model(model_name)
     return {
-        "class_labels": [format_label(name) for name in labels],
+        "class_labels": list(labels),
         "thresholds": thresholds,
         "model_name": model_name,
     }
