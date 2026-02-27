@@ -1,6 +1,6 @@
-# IFCB Classification App
+# IFCB Inference App
 
-A web application for classifying phytoplankton images from Imaging FlowCytobot (IFCB) instruments using a fine-tuned ResNet-50 model for the Skagerrak, Kattegat, and Baltic sea. Built with [Gradio](https://www.gradio.app/).
+A web application for running inference on phytoplankton images from Imaging FlowCytobot (IFCB) instruments using a fine-tuned ResNet-50 model for the Skagerrak, Kattegat, and Baltic sea. Built with [Gradio](https://www.gradio.app/).
 
 ## Features
 
@@ -21,6 +21,10 @@ The included example configuration (SMHI-NIVA-ResNet50-V5) expects:
 - **Input:** 224 x 224 px (square-padded with adaptive background colour)
 - **Classes:** 109
 - **Training data:** [SMHI IFCB Plankton Image Reference Library](https://doi.org/10.17044/scilifelab.25883455) and images provided by the Norwegian Institute for Water Research (NIVA)
+
+### Training your own model
+
+This app is inference-only. To train your own PyTorch classification model for IFCB data, see [IFCBClassify_DEMO](https://github.com/EuropeanIFCBGroup/IFCBClassify_DEMO). Once trained, place the exported `weights.pth` and a classlist (`classes.txt`) in a new subdirectory under `data/models/` and the app will pick it up automatically.
 
 ## Requirements
 
