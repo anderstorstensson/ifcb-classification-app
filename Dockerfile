@@ -20,6 +20,7 @@ RUN apt-get update && apt-get install --no-install-recommends -y \
 
 # Copy code and start script (this will place the files in home/username/)
 COPY requirements.txt $HOME/app/requirements.txt
+COPY pyproject.toml $HOME/app/pyproject.toml
 COPY main.py $HOME/app/main.py
 COPY model.py $HOME/app/model.py
 COPY session.py $HOME/app/session.py

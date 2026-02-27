@@ -8,19 +8,35 @@ A web application for classifying phytoplankton images from Imaging FlowCytobot 
 - Batch classification via ZIP upload (up to 10,000 images)
 - Paginated image gallery with sorting by name or dimension
 - Per-class F2 optimised thresholds displayed on prediction bars
-- Lightbox view for uploaded images
+- Auto-discovery of models from the `data/models/` directory
+- API endpoints for programmatic access (`predict_scores`, `get_thresholds`)
 
-## Model
+## Models
+
+The app auto-discovers models from the `data/models/` directory. Each model needs a subdirectory containing `weights.pth`, `classes.txt`, and optionally `thresholds.json` and `about.md`. Model weights are not included in the repository — contact the author to obtain them.
+
+The included example configuration (SMHI-NIVA-ResNet50-V5) expects:
 
 - **Architecture:** ResNet-50
 - **Input:** 224 x 224 px (square-padded with adaptive background colour)
-- **Classes:** 108
+- **Classes:** 109
 - **Training data:** [SMHI IFCB Plankton Image Reference Library](https://doi.org/10.17044/scilifelab.25883455) and images provided by the Norwegian Institute for Water Research (NIVA)
 
 ## Requirements
 
 - Python 3.11+
-- Model weights (`weights.pth`) in `data/models/ifcb-plankton-resnet50/` — not included in the repository, contact the author to obtain them
+- PyTorch (CPU-only by default via `requirements.txt`)
+
+### GPU Support
+
+The default `requirements.txt` installs CPU-only PyTorch. The app automatically detects and uses CUDA or MPS (Apple Silicon) when available. To enable GPU acceleration, reinstall PyTorch with CUDA support:
+
+```bash
+pip install -r requirements.txt
+
+# Then reinstall PyTorch with CUDA (check https://pytorch.org/get-started for the latest commands)
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
+```
 
 ## Local Setup
 
@@ -49,6 +65,15 @@ docker build -t ifcb-classification-app .
 docker run -p 7860:7860 ifcb-classification-app
 ```
 
+## API Endpoints
+
+The app exposes two API endpoints alongside the web UI:
+
+- **`predict_scores`** — Classify an image and return all class scores as JSON (`{"class_labels": [...], "scores": [...]}`).
+- **`get_thresholds`** — Return per-class F2 thresholds and class labels for a model.
+
+See the Gradio API docs at `http://localhost:7860/?view=api` when the app is running.
+
 ## Project Structure
 
 ```
@@ -62,7 +87,8 @@ docker run -p 7860:7860 ifcb-classification-app
 │       └── SMHI-NIVA-ResNet50-V5/
 │           ├── weights.pth      # Model weights (git-ignored)
 │           ├── classes.txt      # Class labels
-│           └── thresholds.json  # Per-class F2 thresholds
+│           ├── thresholds.json  # Per-class F2 thresholds
+│           └── about.md         # Model description (optional)
 ├── requirements.txt        # Python dependencies
 ├── pyproject.toml          # Project metadata and version
 ├── Dockerfile

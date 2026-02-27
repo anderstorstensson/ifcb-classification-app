@@ -9,7 +9,7 @@ IMAGE_EXTENSIONS = {
     '.png', '.jpg', '.jpeg', '.bmp', '.tiff', '.tif', '.gif', '.webp',
 }
 
-IMAGES_PER_PAGE = 500
+IMAGES_PER_PAGE = 100
 MAX_ZIP_BYTES = 200 * 1024 * 1024  # 200 MB
 MAX_ZIP_FILES = 10_000
 MAX_SINGLE_FILE_BYTES = 50 * 1024 * 1024  # 50 MB

@@ -1,7 +1,7 @@
 [project]
 name = "ifcb-classification-app"
-version = "0.2.4"
-description = "Classify phytoplankton images using a fine-tuned ResNet-50"
+version = "0.3.0"
+description = "Classify phytoplankton images using a fine-tuned ResNet-50 model"
 license = "MIT"
 requires-python = ">=3.11"
 authors = [

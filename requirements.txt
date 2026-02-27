@@ -1,6 +1,12 @@
 gradio==6.5.1
 pillow==11.3.0
 
+# CPU-only (default)
 --extra-index-url https://download.pytorch.org/whl/cpu
 torch==2.9.0+cpu
 torchvision==0.24.0+cpu
+
+# GPU (CUDA 12.4) — uncomment the lines below and comment out the CPU lines above
+# --extra-index-url https://download.pytorch.org/whl/cu124
+# torch==2.9.0+cu124
+# torchvision==0.24.0+cu124
