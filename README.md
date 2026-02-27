@@ -1,6 +1,6 @@
 # IFCB Inference App
 
-A web application for running inference on phytoplankton images from Imaging FlowCytobot (IFCB) instruments using a fine-tuned ResNet-50 model for the Skagerrak, Kattegat, and Baltic sea. Built with [Gradio](https://www.gradio.app/).
+A [web application](https://irfcb-classify.hf.space/) for running inference on phytoplankton images from Imaging FlowCytobot (IFCB) instruments using a fine-tuned ResNet-50 model for the Skagerrak, Kattegat, and Baltic sea. Built with [Gradio](https://www.gradio.app/).
 
 ## Features
 
